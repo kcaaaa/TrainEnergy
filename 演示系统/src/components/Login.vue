@@ -19,6 +19,25 @@
           <i class="fa fa-sign-in"></i> 登录
         </el-button>
       </el-form>
+
+      <el-divider>演示账号说明</el-divider>
+      <el-alert type="info" show-icon :closable="false" class="account-tip">
+        <template #title>可直接复制使用</template>
+        <div class="account-list">
+          <div class="account-item">
+            <strong>超级管理员</strong>：admin / 12345678
+          </div>
+          <div class="account-item">
+            <strong>全站管理员</strong>：Allsite / 12345678
+          </div>
+          <div class="account-item">
+            <strong>单站管理员</strong>：station01 / 12345678（北京南站）
+          </div>
+          <div class="account-item">
+            <strong>单站管理员</strong>：station02 / 12345678（上海虹桥站）
+          </div>
+        </div>
+      </el-alert>
     </el-card>
   </div>
 </template>
@@ -48,21 +67,24 @@ const rules = {
 }
 
 const ensureMockUsers = () => {
-  const existing = localStorage.getItem('users')
-  if (!existing) {
-    const mock = [
-      { id: '1', username: 'admin', nickname: '系统管理员', password: '12345678', roleId: '1', status: true },
-      { id: '2', username: 'user1', nickname: '演示用户', password: '12345678', roleId: '2', status: true }
-    ]
-    localStorage.setItem('users', JSON.stringify(mock))
+  const roles = [
+    { id: '1', roleKey: 'super_admin', roleName: '超级管理员', description: '系统最高权限', status: true },
+    { id: '2', roleKey: 'site_admin', roleName: '全站管理员', description: '多站与全站配置', status: true },
+    { id: '3', roleKey: 'station_admin', roleName: '单站管理员', description: '单站权限', status: true }
+  ]
+
+  const users = [
+    { id: '1', username: 'admin', nickname: '超级管理员', password: '12345678', roleId: '1', roleKey: 'super_admin', status: true },
+    { id: '2', username: 'Allsite', nickname: '全站管理员', password: '12345678', roleId: '2', roleKey: 'site_admin', status: true },
+    { id: '3', username: 'station01', nickname: '北京南站管理员', password: '12345678', roleId: '3', roleKey: 'station_admin', stationId: 'beijing', stationName: '北京南站', status: true },
+    { id: '4', username: 'station02', nickname: '上海虹桥站管理员', password: '12345678', roleId: '3', roleKey: 'station_admin', stationId: 'shanghai', stationName: '上海虹桥站', status: true }
+  ]
+
+  if (!localStorage.getItem('roles')) {
+    localStorage.setItem('roles', JSON.stringify(roles))
   }
-  const roles = localStorage.getItem('roles')
-  if (!roles) {
-    const mockRoles = [
-      { id: '1', roleKey: 'admin', roleName: '管理员', description: '系统管理员', status: true },
-      { id: '2', roleKey: 'user', roleName: '普通用户', description: '普通用户', status: true }
-    ]
-    localStorage.setItem('roles', JSON.stringify(mockRoles))
+  if (!localStorage.getItem('users')) {
+    localStorage.setItem('users', JSON.stringify(users))
   }
 }
 
@@ -83,7 +105,10 @@ const handleLogin = () => {
         id: found.id,
         username: found.username,
         nickname: found.nickname || found.username,
-        roleId: found.roleId
+        roleId: found.roleId,
+        roleKey: found.roleKey,
+        stationId: found.stationId || '',
+        stationName: found.stationName || ''
       }
       localStorage.setItem('token', token)
       localStorage.setItem('currentUser', JSON.stringify(userInfo))
@@ -141,6 +166,23 @@ onMounted(() => {
 .login-btn {
   width: 100%;
   margin-top: 8px;
+}
+
+.account-tip {
+  margin-top: 12px;
+}
+
+.account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.account-item {
+  font-size: 13px;
+  color: #606266;
+  line-height: 1.5;
 }
 </style>
 

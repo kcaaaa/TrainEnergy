@@ -27,7 +27,7 @@
           <i class="fa fa-home"></i>
           <template #title>首页数据展示</template>
         </el-menu-item>
-        <el-menu-item index="/station-analysis">
+        <el-menu-item v-if="isSingleMode" index="/station-analysis">
           <i class="fa fa-bar-chart"></i>
           <template #title>单站能耗分析</template>
         </el-menu-item>
@@ -39,7 +39,7 @@
           <i class="fa fa-exclamation-triangle"></i>
           <template #title>能耗分析预警系统</template>
         </el-menu-item>
-        <el-menu-item index="/multi-station-compare">
+        <el-menu-item v-if="isMultiMode && canUseMulti" index="/multi-station-compare">
           <i class="fa fa-line-chart"></i>
           <template #title>多站能耗对比</template>
         </el-menu-item>
@@ -76,7 +76,20 @@
           </span>
         </div>
         <div class="header-right">
-          <el-dropdown trigger="click" @visible-change="handleStationDropdownVisibleChange">
+          <el-radio-group
+            size="small"
+            v-model="currentMode"
+            @change="handleModeChange"
+            class="mode-switch"
+          >
+            <el-radio-button label="single">单站分析</el-radio-button>
+            <el-radio-button :disabled="!canUseMulti" label="multi">多站分析</el-radio-button>
+          </el-radio-group>
+          <el-dropdown
+            v-if="isSingleMode"
+            trigger="click"
+            @visible-change="handleStationDropdownVisibleChange"
+          >
             <span class="station-info">
               <i class="fa fa-building"></i>
               <span class="station-name">{{ currentStation.label }}</span>
@@ -84,14 +97,8 @@
             </span>
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item @click="selectAllStations">
-                  <i class="fa fa-globe"></i> 多站分析
-                </el-dropdown-item>
-                <el-dropdown-item divided>
-                  <span style="font-weight: bold; color: #409EFF;">单站分析</span>
-                </el-dropdown-item>
                 <el-dropdown-item 
-                  v-for="station in stationList" 
+                  v-for="station in availableStations" 
                   :key="station.value" 
                   @click="selectStation(station)"
                   :class="{ 'active-station': currentStation.value === station.value }"
@@ -179,12 +186,14 @@ import { ElMessage } from 'element-plus'
 export default {
   name: 'App',
   setup() {
+    const MODE_KEY = 'analysisMode'
     const isCollapse = ref(false)
     const route = useRoute()
     const router = useRouter()
     const profileVisible = ref(false)
     const profileFormRef = ref(null)
     const currentUser = reactive(loadCurrentUser())
+    const currentMode = ref(loadMode())
 
     // 站点选择相关数据
     const stationList = ref([
@@ -250,8 +259,44 @@ export default {
       return { username: '', nickname: '' }
     }
 
+    function loadMode() {
+      const saved = sessionStorage.getItem(MODE_KEY)
+      if (saved) return saved
+      // 单站管理员默认单站模式
+      return 'single'
+    }
+
+    const rolesDict = computed(() => {
+      const roles = JSON.parse(localStorage.getItem('roles') || '[]')
+      return roles.reduce((acc, cur) => {
+        acc[cur.id] = cur.roleKey
+        return acc
+      }, {})
+    })
+
+    const roleKey = computed(() => currentUser.roleKey || rolesDict.value[currentUser.roleId] || 'user')
+    const isSuperAdmin = computed(() => roleKey.value === 'super_admin')
+    const isSiteAdmin = computed(() => roleKey.value === 'site_admin')
+    const isStationAdmin = computed(() => roleKey.value === 'station_admin')
+    const canUseMulti = computed(() => isSuperAdmin.value || isSiteAdmin.value)
+    const isSingleMode = computed(() => currentMode.value === 'single')
+    const isMultiMode = computed(() => currentMode.value === 'multi')
+
     const activeMenu = computed(() => route.path)
     const isLoginPage = computed(() => route.path === '/login')
+    const availableStations = computed(() => {
+      if (isStationAdmin.value && currentUser.stationId) {
+        return stationList.value.filter(s => s.value === currentUser.stationId)
+      }
+      return stationList.value
+    })
+
+    watch([roleKey, currentMode], ([newRole, mode]) => {
+      if (newRole === 'station_admin' && mode === 'multi') {
+        currentMode.value = 'single'
+        saveMode('single')
+      }
+    })
     
     // 面包屑数据
     const breadcrumbItems = computed(() => {
@@ -304,6 +349,12 @@ export default {
 
     // 站点选择相关方法
     const selectStation = (station) => {
+      if (isStationAdmin.value && station.value !== currentUser.stationId) {
+        ElMessage.warning('当前账号仅可查看绑定站点')
+        return
+      }
+      currentMode.value = 'single'
+      saveMode('single')
       currentStation.value = station
       // 保存到本地存储，以便其他组件获取
       localStorage.setItem('currentStation', JSON.stringify(station))
@@ -312,16 +363,51 @@ export default {
       window.dispatchEvent(new CustomEvent('stationChanged', { detail: station }))
     }
 
-    const selectAllStations = () => {
+    const selectAllStations = (silent = false) => {
+      if (!canUseMulti.value) {
+        ElMessage.warning('当前账号仅支持单站分析')
+        return
+      }
+      currentMode.value = 'multi'
+      saveMode('multi')
       currentStation.value = {
         value: 'all',
         label: '多站分析'
       }
       // 保存到本地存储
       localStorage.setItem('currentStation', JSON.stringify(currentStation.value))
-      ElMessage.success('已切换到多站分析')
+      if (!silent) {
+        ElMessage.success('已切换到多站分析')
+      }
       // 触发站点切换事件
       window.dispatchEvent(new CustomEvent('stationChanged', { detail: currentStation.value }))
+    }
+
+    const saveMode = (mode) => {
+      sessionStorage.setItem(MODE_KEY, mode)
+    }
+
+    const handleModeChange = (mode) => {
+      if (mode === 'multi' && !canUseMulti.value) {
+        ElMessage.warning('当前账号仅支持单站分析')
+        currentMode.value = 'single'
+        saveMode('single')
+        return
+      }
+      currentMode.value = mode
+      saveMode(mode)
+      if (mode === 'multi') {
+        selectAllStations(true)
+        if (route.path === '/station-analysis') {
+          router.push('/multi-station-compare')
+        }
+      } else {
+        if (route.path === '/multi-station-compare') {
+          router.push('/station-analysis')
+        }
+      }
+      window.dispatchEvent(new CustomEvent('modeChanged', { detail: mode }))
+      ElMessage.success(`已切换至${mode === 'single' ? '单站' : '多站'}模式，筛选已重置`)
     }
 
     const handleStationDropdownVisibleChange = (visible) => {
@@ -391,6 +477,18 @@ export default {
       const savedStation = localStorage.getItem('currentStation')
       if (savedStation) {
         currentStation.value = JSON.parse(savedStation)
+      } else if (isStationAdmin.value && currentUser.stationId) {
+        const own = stationList.value.find(s => s.value === currentUser.stationId) || {
+          value: currentUser.stationId,
+          label: currentUser.stationName || '所属站点'
+        }
+        currentStation.value = own
+        localStorage.setItem('currentStation', JSON.stringify(own))
+      }
+
+      if (currentMode.value === 'multi' && !canUseMulti.value) {
+        currentMode.value = 'single'
+        saveMode('single')
       }
     })
 
@@ -401,6 +499,12 @@ export default {
       isLoginPage,
       activeMenu,
       currentUser,
+      roleKey,
+      canUseMulti,
+      isSingleMode,
+      isMultiMode,
+      currentMode,
+      handleModeChange,
       profileVisible,
       profileForm,
       profileRules,
@@ -411,6 +515,7 @@ export default {
       goSystemSettings,
       // 站点选择相关
       stationList,
+      availableStations,
       currentStation,
       selectStation,
       selectAllStations,
@@ -540,6 +645,10 @@ body {
   display: flex;
   align-items: center;
   gap: 20px;
+}
+
+.mode-switch {
+  margin-right: 4px;
 }
 
 .user-info {

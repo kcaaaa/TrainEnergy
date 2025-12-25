@@ -11,6 +11,8 @@ import DeviceManagement from '../components/DeviceManagement/DeviceManagement.vu
 import SystemManagement from '../components/SystemManagement/SystemManagement.vue'
 import Login from '../components/Login.vue'
 
+const MODE_KEY = 'analysisMode'
+
 const routes = [
   {
     path: '/',
@@ -80,7 +82,7 @@ router.beforeEach((to, from, next) => {
   }
 
   const publicPage = to.meta.public
-  const token = localStorage.getItem('token')
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token')
 
   if (!publicPage && !token) {
     return next({ path: '/login' })
@@ -88,6 +90,27 @@ router.beforeEach((to, from, next) => {
 
   if (to.path === '/login' && token) {
     return next({ path: '/' })
+  }
+
+  const mode = sessionStorage.getItem(MODE_KEY) || 'single'
+  const currentUser = JSON.parse(localStorage.getItem('currentUser') || sessionStorage.getItem('currentUser') || '{}')
+  const roles = JSON.parse(localStorage.getItem('roles') || '[]')
+  const roleKey = currentUser.roleKey || roles.find(r => r.id === currentUser.roleId)?.roleKey || 'user'
+  const canUseMulti = roleKey === 'super_admin' || roleKey === 'site_admin'
+
+  if (mode === 'multi' && !canUseMulti) {
+    sessionStorage.setItem(MODE_KEY, 'single')
+    if (to.path === '/multi-station-compare') {
+      return next({ path: '/station-analysis' })
+    }
+  }
+
+  if (mode === 'single' && to.path === '/multi-station-compare') {
+    return next({ path: '/station-analysis' })
+  }
+
+  if (mode === 'multi' && to.path === '/station-analysis' && canUseMulti) {
+    return next({ path: '/multi-station-compare' })
   }
 
   next()

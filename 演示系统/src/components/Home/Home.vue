@@ -176,9 +176,29 @@
       </el-row>
     </div>
 
-    <!-- 时段能耗分析与能耗预警记录 -->
-    <div class="bottom-section">
+    <!-- 能耗结构分析与时段能耗分析 -->
+    <div class="analysis-section">
       <el-row :gutter="20">
+        <!-- 能耗结构分析 -->
+        <el-col :xs="24" :md="12" :lg="12" :xl="12">
+          <el-card shadow="hover">
+            <template #header>
+              <div class="card-header">
+                <span>能耗结构分析</span>
+                <div class="header-actions">
+                  <el-button size="small" type="primary" @click="viewEnergyStructureDetail">
+                    <i class="fa fa-search"></i> 查看详情
+                  </el-button>
+                  <el-button size="small" type="success" @click="exportEnergyStructureData">
+                    <i class="fa fa-download"></i> 导出Excel
+                  </el-button>
+                </div>
+              </div>
+            </template>
+            <div id="energyStructureChart" class="chart-container"></div>
+          </el-card>
+        </el-col>
+
         <!-- 时段能耗分析 -->
         <el-col :xs="24" :md="12" :lg="12" :xl="12">
           <el-card shadow="hover">
@@ -193,11 +213,13 @@
         <div id="timeEnergyChart" class="chart-container"></div>
           </el-card>
         </el-col>
+      </el-row>
+    </div>
 
-        <!-- 能耗预警记录 -->
-        <el-col :xs="24" :md="12" :lg="12" :xl="12">
-          <el-card shadow="hover">
-            <template #header>
+    <!-- 能耗预警记录 -->
+    <div class="alert-section">
+      <el-card shadow="hover">
+        <template #header>
           <div class="card-header">
             <span>能耗预警记录</span>
             <div class="header-actions">
@@ -210,32 +232,106 @@
             </div>
           </div>
         </template>
-            <div class="alert-table">
-              <el-table :data="alertRecords" stripe style="width: 100%">
-                <el-table-column prop="time" label="预警时间" width="150" />
-                <el-table-column prop="station" label="高铁站" width="120" />
-                <el-table-column prop="area" label="区域" width="100" />
-                <el-table-column prop="type" label="预警类型" width="120">
-                  <template #default="scope">
-                    <el-tag :type="getAlertTypeTag(scope.row.type)">
-                      {{ scope.row.type }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="description" label="预警描述" />
-                <el-table-column label="操作" width="100" fixed="right">
-                  <template #default="scope">
-                    <el-button type="text" size="small" @click="handleAlert(scope.row)">
-                      <i class="fa fa-eye"></i> 处理
-                    </el-button>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </div>
-          </el-card>
-        </el-col>
-      </el-row>
+        <div class="alert-table">
+          <el-table :data="alertRecords" stripe style="width: 100%">
+            <el-table-column prop="time" label="预警时间" width="150" />
+            <el-table-column prop="station" label="高铁站" width="120" />
+            <el-table-column prop="area" label="区域" width="100" />
+            <el-table-column prop="type" label="预警类型" width="120">
+              <template #default="scope">
+                <el-tag :type="getAlertTypeTag(scope.row.type)">
+                  {{ scope.row.type }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="description" label="预警描述" />
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="scope">
+                <el-button type="text" size="small" @click="handleAlert(scope.row)">
+                  <i class="fa fa-eye"></i> 处理
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </el-card>
     </div>
+
+    <!-- 能耗预警详情弹窗 -->
+    <el-dialog
+      v-model="alertDetailVisible"
+      title="能耗预警详情"
+      width="600px"
+      :before-close="handleDialogClose"
+    >
+      <div v-if="currentAlert" class="alert-detail">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="预警时间">{{ currentAlert.time }}</el-descriptions-item>
+          <el-descriptions-item label="高铁站">{{ currentAlert.station }}</el-descriptions-item>
+          <el-descriptions-item label="区域">{{ currentAlert.area }}</el-descriptions-item>
+          <el-descriptions-item label="预警类型">
+            <el-tag :type="getAlertTypeTag(currentAlert.type)">{{ currentAlert.type }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="预警描述">{{ currentAlert.description }}</el-descriptions-item>
+          <el-descriptions-item label="预警状态">
+            <el-tag :type="currentAlert.status === '已处理' ? 'success' : 'warning'">
+              {{ currentAlert.status }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="能耗值">{{ currentAlert.energyValue || 'N/A' }} kWh</el-descriptions-item>
+          <el-descriptions-item label="阈值">{{ currentAlert.threshold || 'N/A' }} kWh</el-descriptions-item>
+          <el-descriptions-item label="超出比例" v-if="currentAlert.exceedRatio">
+            <el-tag type="danger">{{ currentAlert.exceedRatio }}%</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="设备名称" v-if="currentAlert.deviceName">{{ currentAlert.deviceName }}</el-descriptions-item>
+          <el-descriptions-item label="设备ID" v-if="currentAlert.deviceId">{{ currentAlert.deviceId }}</el-descriptions-item>
+        </el-descriptions>
+        
+        <div v-if="currentAlert.status === '未处理'" class="alert-handle">
+          <h4>预警处理</h4>
+          <el-form :model="alertHandleForm" label-width="80px">
+            <el-form-item label="处理方式">
+              <el-select v-model="alertHandleForm.handleType" placeholder="请选择处理方式" style="width: 100%">
+                <el-option label="调整设备参数" value="adjust" />
+                <el-option label="设备检修" value="maintain" />
+                <el-option label="正常波动" value="normal" />
+                <el-option label="其他" value="other" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="处理备注">
+              <el-input
+                v-model="alertHandleForm.remark"
+                type="textarea"
+                :rows="4"
+                placeholder="请输入处理备注"
+              ></el-input>
+            </el-form-item>
+          </el-form>
+        </div>
+        
+        <div v-else class="alert-handle-record">
+          <h4>处理记录</h4>
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="处理时间">{{ currentAlert.handleTime || 'N/A' }}</el-descriptions-item>
+            <el-descriptions-item label="处理人">{{ currentAlert.handler || 'N/A' }}</el-descriptions-item>
+            <el-descriptions-item label="处理方式">{{ currentAlert.handleType || 'N/A' }}</el-descriptions-item>
+            <el-descriptions-item label="处理备注">{{ currentAlert.remark || 'N/A' }}</el-descriptions-item>
+          </el-descriptions>
+        </div>
+      </div>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="handleDialogClose">关闭</el-button>
+          <el-button
+            type="primary"
+            v-if="currentAlert && currentAlert.status === '未处理'"
+            @click="submitAlertHandle"
+          >
+            确认处理
+          </el-button>
+        </div>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -256,6 +352,7 @@ export default {
     let areaEnergyChart = null
     let deviceEnergyChart = null
     let timeEnergyChart = null
+    let energyStructureChart = null
 
     // 核心指标数据
     const coreIndicators = reactive({
@@ -277,7 +374,12 @@ export default {
         area: '候车厅',
         type: '超耗预警',
         description: '候车厅照明能耗超出阈值15%',
-        status: '未处理'
+        status: '未处理',
+        energyValue: 1875.5,
+        threshold: 1630.9,
+        exceedRatio: 15,
+        deviceName: 'LED照明系统',
+        deviceId: 'LIGHT-BJS-001'
       },
       {
         time: '2024-01-15 09:15',
@@ -285,7 +387,12 @@ export default {
         area: '空调系统',
         type: '异常能耗',
         description: '空调系统能耗异常波动',
-        status: '未处理'
+        status: '未处理',
+        energyValue: 3245.2,
+        threshold: 2800.0,
+        exceedRatio: 15.9,
+        deviceName: '中央空调主机',
+        deviceId: 'AC-SHH-002'
       },
       {
         time: '2024-01-15 10:45',
@@ -293,7 +400,12 @@ export default {
         area: '电梯系统',
         type: '超耗预警',
         description: '电梯系统能耗超出阈值20%',
-        status: '未处理'
+        status: '未处理',
+        energyValue: 1120.0,
+        threshold: 933.3,
+        exceedRatio: 20,
+        deviceName: '高速电梯群',
+        deviceId: 'ELEVATOR-GZN-005'
       },
       {
         time: '2024-01-15 11:20',
@@ -301,7 +413,12 @@ export default {
         area: '照明系统',
         type: '异常能耗',
         description: '照明系统能耗异常增高',
-        status: '未处理'
+        status: '未处理',
+        energyValue: 1560.8,
+        threshold: 1300.7,
+        exceedRatio: 20,
+        deviceName: '应急照明系统',
+        deviceId: 'LIGHT-SZN-007'
       },
       {
         time: '2024-01-15 14:30',
@@ -309,9 +426,28 @@ export default {
         area: '空调系统',
         type: '超耗预警',
         description: '空调系统能耗超出阈值18%',
-        status: '未处理'
+        status: '未处理',
+        energyValue: 2950.0,
+        threshold: 2500.0,
+        exceedRatio: 18,
+        deviceName: '中央空调末端',
+        deviceId: 'AC-HZD-003'
       }
     ])
+
+    // 能耗预警详情弹窗
+    const alertDetailVisible = ref(false)
+    const currentAlert = ref(null)
+    const alertHandleForm = reactive({
+      handleType: '',
+      remark: ''
+    })
+
+    // 重置预警处理表单
+    const resetAlertHandleForm = () => {
+      alertHandleForm.handleType = ''
+      alertHandleForm.remark = ''
+    }
 
     // 初始化能耗趋势图
     const initEnergyTrendChart = () => {
@@ -545,6 +681,63 @@ export default {
       timeEnergyChart.setOption(option)
     }
 
+    // 初始化能耗结构分析图
+    const initEnergyStructureChart = () => {
+      const chartDom = document.getElementById('energyStructureChart')
+      energyStructureChart = echarts.init(chartDom)
+
+      const option = {
+        tooltip: {
+          trigger: 'item',
+          formatter: '{b}: {c} kWh ({d}%)'
+        },
+        legend: {
+          orient: 'vertical',
+          right: 10,
+          top: 'center',
+          textStyle: {
+            fontSize: 12
+          }
+        },
+        series: [
+          {
+            name: '能耗结构',
+            type: 'pie',
+            radius: ['40%', '70%'],
+            center: ['35%', '50%'],
+            avoidLabelOverlap: false,
+            itemStyle: {
+              borderRadius: 10,
+              borderColor: '#fff',
+              borderWidth: 2
+            },
+            label: {
+              show: false,
+              position: 'center'
+            },
+            emphasis: {
+              label: {
+                show: true,
+                fontSize: '16',
+                fontWeight: 'bold'
+              }
+            },
+            labelLine: {
+              show: false
+            },
+            data: [
+              { value: 7526.16, name: '电力' },
+              { value: 2508.72, name: '天然气' },
+              { value: 1505.23, name: '水' },
+              { value: 1003.49, name: '其他能源' }
+            ]
+          }
+        ]
+      }
+
+      energyStructureChart.setOption(option)
+    }
+
     // 获取预警类型标签颜色
     const getAlertTypeTag = (type) => {
       const typeMap = {
@@ -579,9 +772,47 @@ export default {
 
     // 处理预警
     const handleAlert = (row) => {
-      console.log('处理预警:', row)
-      // 这里可以添加实际的预警处理逻辑
-      ElMessage.info('预警处理功能正在开发中')
+      currentAlert.value = {...row}
+      alertDetailVisible.value = true
+      resetAlertHandleForm()
+    }
+
+    // 关闭预警详情弹窗
+    const handleDialogClose = () => {
+      alertDetailVisible.value = false
+      resetAlertHandleForm()
+      setTimeout(() => {
+        currentAlert.value = null
+      }, 300)
+    }
+
+    // 提交预警处理
+    const submitAlertHandle = () => {
+      if (!alertHandleForm.handleType) {
+        ElMessage.error('请选择处理方式')
+        return
+      }
+      
+      // 模拟处理预警
+      const alertIndex = alertRecords.findIndex(item => 
+        item.time === currentAlert.value.time && 
+        item.station === currentAlert.value.station
+      )
+      
+      if (alertIndex !== -1) {
+        // 更新预警记录
+        alertRecords[alertIndex].status = '已处理'
+        alertRecords[alertIndex].handleTime = new Date().toISOString().slice(0, 19).replace('T', ' ')
+        alertRecords[alertIndex].handler = '系统管理员'
+        alertRecords[alertIndex].handleType = alertHandleForm.handleType
+        alertRecords[alertIndex].remark = alertHandleForm.remark
+        
+        // 更新当前预警
+        currentAlert.value = {...alertRecords[alertIndex]}
+        
+        ElMessage.success('预警处理成功')
+        handleDialogClose()
+      }
     }
 
     // 导出能耗趋势图数据到Excel
@@ -711,6 +942,36 @@ export default {
       ElMessage.success('能耗预警记录导出成功')
     }
 
+    // 导出能耗结构分析数据到Excel
+    const exportEnergyStructureData = () => {
+      // 获取图表数据
+      const option = energyStructureChart.getOption()
+      const seriesData = option.series[0].data
+      
+      // 准备Excel数据
+      const excelData = [['能源类型', '能耗值(kWh)', '占比(%)']]
+      seriesData.forEach(item => {
+        // 计算百分比
+        const total = seriesData.reduce((sum, current) => sum + current.value, 0)
+        const percentage = ((item.value / total) * 100).toFixed(2)
+        excelData.push([item.name, item.value, percentage])
+      })
+      
+      // 创建工作簿和工作表
+      const worksheet = XLSX.utils.aoa_to_sheet(excelData)
+      const workbook = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(workbook, worksheet, '能耗结构分析')
+      
+      // 导出Excel文件
+      XLSX.writeFile(workbook, `能耗结构分析_${new Date().toISOString().slice(0,10)}.xlsx`)
+      ElMessage.success('能耗结构分析数据导出成功')
+    }
+
+    // 查看能耗结构详情
+    const viewEnergyStructureDetail = () => {
+      router.push('/energy-structure')
+    }
+
     // 查看核心指标详情
     const viewIndicatorDetail = (indicator) => {
       console.log('查看指标详情:', indicator)
@@ -723,6 +984,7 @@ export default {
       areaEnergyChart && areaEnergyChart.resize()
       deviceEnergyChart && deviceEnergyChart.resize()
       timeEnergyChart && timeEnergyChart.resize()
+      energyStructureChart && energyStructureChart.resize()
     }
 
     // 生命周期钩子
@@ -731,6 +993,7 @@ export default {
       initAreaEnergyChart()
       initDeviceEnergyChart()
       initTimeEnergyChart()
+      initEnergyStructureChart()
       window.addEventListener('resize', handleResize)
     })
 
@@ -740,6 +1003,7 @@ export default {
       areaEnergyChart && areaEnergyChart.dispose()
       deviceEnergyChart && deviceEnergyChart.dispose()
       timeEnergyChart && timeEnergyChart.dispose()
+      energyStructureChart && energyStructureChart.dispose()
     })
 
     return {

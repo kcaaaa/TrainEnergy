@@ -1,705 +1,266 @@
 <template>
   <div class="station-analysis-container">
-    <!-- 页面标题 -->
-    <el-card shadow="hover" class="page-header">
-      <h1 class="page-title">
-        <i class="fa fa-line-chart"></i> 单站能耗分析
-      </h1>
-      <p class="page-subtitle">对单个高铁站的能耗数据进行深入分析和趋势预测</p>
+    <!-- 页面头部 -->
+    <el-page-header @back="handleBack" content="单站能耗分析" />
+
+    <!-- 筛选区域 -->
+    <FilterBar
+      :station-list="stationList"
+      :selected-station="searchForm.station"
+      :time-granularity="searchForm.timeGranularity"
+      @update:selected-station="searchForm.station = $event"
+      @update:time-granularity="searchForm.timeGranularity = $event"
+      @query="handleQuery"
+      @reset="handleReset"
+    />
+
+    <!-- 指标概览 -->
+    <MetricsOverview
+      :total-energy="metrics.totalEnergy"
+      :unit-area-energy="metrics.unitAreaEnergy"
+      :energy-cost="metrics.energyCost"
+      :energy-efficiency="metrics.energyEfficiency"
+    />
+
+    <!-- 能耗趋势 -->
+    <el-card shadow="hover" class="chart-card">
+      <template #header>
+        <div class="card-header">
+          <span>能耗趋势分析</span>
+        </div>
+      </template>
+      <EnergyTrend
+        :time-granularity="searchForm.timeGranularity"
+      />
     </el-card>
 
-    <!-- 筛选条件 -->
-    <el-card shadow="hover" class="filter-card">
-      <el-row :gutter="20">
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="站点选择">
-            <el-select v-model="selectedStation" placeholder="请选择高铁站" clearable>
-              <el-option
-                v-for="station in stationList"
-                :key="station.value"
-                :label="station.label"
-                :value="station.value"
-              />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="时间范围">
-            <el-date-picker
-              v-model="dateRange"
-              type="daterange"
-              range-separator="至"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
-              value-format="YYYY-MM-DD"
-            />
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6">
-          <el-form-item label="时间粒度">
-            <el-select v-model="timeGranularity" placeholder="选择时间粒度">
-              <el-option label="日" value="day" />
-              <el-option label="周" value="week" />
-              <el-option label="月" value="month" />
-              <el-option label="年" value="year" />
-            </el-select>
-          </el-form-item>
-        </el-col>
-        <el-col :xs="24" :sm="12" :md="6" class="filter-actions">
-          <el-button type="primary" @click="handleQuery">
-            <i class="fa fa-search"></i> 查询
-          </el-button>
-          <el-button type="info" @click="handleReset">
-            <i class="fa fa-refresh"></i> 重置
-          </el-button>
-        </el-col>
-      </el-row>
+    <!-- 能耗结构 -->
+    <el-card shadow="hover" class="chart-card">
+      <template #header>
+        <div class="card-header">
+          <span>能耗结构分析</span>
+        </div>
+      </template>
+      <EnergyStructure
+        :time-granularity="searchForm.timeGranularity"
+      />
     </el-card>
 
-    <!-- 能耗指标概览 -->
-    <el-row :gutter="20" class="metrics-row">
-      <el-col :xs="24" :sm="12" :md="6">
-        <el-card shadow="hover" class="metric-card energy-total">
-          <div class="metric-content">
-            <div class="metric-header">
-              <h3 class="metric-title">总能耗</h3>
-              <i class="fa fa-bolt metric-icon"></i>
-            </div>
-            <div class="metric-value">{{ totalEnergy }} kWh</div>
-            <div class="metric-trend">
-              <span class="trend-label">同比</span>
-              <span class="trend-value positive">{{ energyTrend.yoy }}%</span>
-              <span class="trend-label">环比</span>
-              <span class="trend-value negative">{{ energyTrend.mom }}%</span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="6">
-        <el-card shadow="hover" class="metric-card unit-energy">
-          <div class="metric-content">
-            <div class="metric-header">
-              <h3 class="metric-title">单位面积能耗</h3>
-              <i class="fa fa-area-chart metric-icon"></i>
-            </div>
-            <div class="metric-value">{{ unitAreaEnergy }} kWh/㎡</div>
-            <div class="metric-trend">
-              <span class="trend-label">同比</span>
-              <span class="trend-value positive">{{ unitAreaTrend.yoy }}%</span>
-              <span class="trend-label">环比</span>
-              <span class="trend-value positive">{{ unitAreaTrend.mom }}%</span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="6">
-        <el-card shadow="hover" class="metric-card energy-cost">
-          <div class="metric-content">
-            <div class="metric-header">
-              <h3 class="metric-title">能耗成本</h3>
-              <i class="fa fa-money metric-icon"></i>
-            </div>
-            <div class="metric-value">¥{{ energyCost }}</div>
-            <div class="metric-trend">
-              <span class="trend-label">同比</span>
-              <span class="trend-value negative">{{ costTrend.yoy }}%</span>
-              <span class="trend-label">环比</span>
-              <span class="trend-value positive">{{ costTrend.mom }}%</span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :sm="12" :md="6">
-        <el-card shadow="hover" class="metric-card energy-efficiency">
-          <div class="metric-content">
-            <div class="metric-header">
-              <h3 class="metric-title">能源效率</h3>
-              <i class="fa fa-tachometer metric-icon"></i>
-            </div>
-            <div class="metric-value">{{ energyEfficiency }}%</div>
-            <div class="metric-trend">
-              <span class="trend-label">同比</span>
-              <span class="trend-value positive">{{ efficiencyTrend.yoy }}%</span>
-              <span class="trend-label">环比</span>
-              <span class="trend-value positive">{{ efficiencyTrend.mom }}%</span>
-            </div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <!-- 异常能耗 -->
+    <el-card shadow="hover" class="chart-card">
+      <template #header>
+        <div class="card-header">
+          <span>异常能耗检测</span>
+        </div>
+      </template>
+      <AbnormalEnergy
+        :abnormal-energy-list="abnormalEnergyList"
+        :page-info="abnormalPageInfo"
+        @mark-resolved="handleMarkResolved"
+        @size-change="handleAbnormalSizeChange"
+        @current-change="handleAbnormalCurrentChange"
+      />
+    </el-card>
 
-    <!-- 能耗趋势图 -->
-    <el-row :gutter="20">
-      <el-col :xs="24">
-        <el-card shadow="hover" class="chart-card">
-          <div slot="header" class="card-header">
-            <h3 class="card-title">
-              <i class="fa fa-line-chart"></i> 能耗趋势分析
-            </h3>
-            <el-button type="text" size="small" @click="toggleChartFullscreen">
-              <i class="fa fa-expand"></i>
-            </el-button>
-          </div>
-          <div class="chart-container">
-            <div ref="energyTrendChart" class="chart"></div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <!-- 车次能耗 -->
+    <el-card shadow="hover" class="chart-card">
+      <template #header>
+        <div class="card-header">
+          <span>车次能耗分析</span>
+        </div>
+      </template>
+      <TrainAnalysis
+        :train-schedule="filteredTrainSchedule"
+        :page-info="trainPageInfo"
+        @size-change="handleTrainSizeChange"
+        @current-change="handleTrainCurrentChange"
+      />
+    </el-card>
 
-    <!-- 能耗结构分析 -->
-    <el-row :gutter="20">
-      <el-col :xs="24" :md="12">
-        <el-card shadow="hover" class="chart-card">
-          <div slot="header" class="card-header">
-            <h3 class="card-title">
-              <i class="fa fa-pie-chart"></i> 能耗结构占比
-            </h3>
-          </div>
-          <div class="chart-container">
-            <div ref="energyStructureChart" class="chart"></div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :xs="24" :md="12">
-        <el-card shadow="hover" class="chart-card">
-          <div slot="header" class="card-header">
-            <h3 class="card-title">
-              <i class="fa fa-bar-chart"></i> 部门能耗对比
-            </h3>
-          </div>
-          <div class="chart-container">
-            <div ref="departmentEnergyChart" class="chart"></div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <!-- 设备能耗 -->
+    <el-card shadow="hover" class="chart-card">
+      <template #header>
+        <div class="card-header">
+          <span>设备能耗分析</span>
+        </div>
+      </template>
+      <EquipmentAnalysis
+        :time-granularity="searchForm.timeGranularity"
+      />
+    </el-card>
 
-    <!-- 异常能耗检测 -->
-    <el-row :gutter="20">
-      <el-col :xs="24">
-        <el-card shadow="hover" class="alert-card">
-          <div slot="header" class="card-header">
-            <h3 class="card-title">
-              <i class="fa fa-exclamation-triangle"></i> 异常能耗检测
-            </h3>
-            <el-button type="success" size="small" @click="handleExportAlert">
-              <i class="fa fa-download"></i> 导出报告
-            </el-button>
-          </div>
-          <el-table
-            :data="abnormalEnergyList"
-            stripe
-            border
-            style="width: 100%"
-            v-loading="loading"
-          >
-            <el-table-column prop="time" label="时间" width="180" />
-            <el-table-column prop="energyValue" label="能耗值(kWh)" width="120" />
-            <el-table-column prop="expectedValue" label="预期值(kWh)" width="120" />
-            <el-table-column prop="deviation" label="偏差率" width="120">
-              <template #default="scope">
-                <el-tag :type="scope.row.deviation > 0 ? 'danger' : 'success'">
-                  {{ scope.row.deviation }}%
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column prop="reason" label="异常原因" />
-            <el-table-column label="操作" width="180" fixed="right">
-              <template #default="scope">
-                <el-button type="primary" size="small" @click="handleViewDetail(scope.row)">
-                  <i class="fa fa-eye"></i> 查看详情
-                </el-button>
-                <el-button type="warning" size="small" @click="handleMarkResolved(scope.row)">
-                  <i class="fa fa-check-circle"></i> 标记已处理
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <div class="pagination-container">
-            <el-pagination
-              @size-change="handleSizeChange"
-              @current-change="handleCurrentChange"
-              :current-page="currentPage"
-              :page-sizes="[10, 20, 50, 100]"
-              :page-size="pageSize"
-              layout="total, sizes, prev, pager, next, jumper"
-              :total="abnormalEnergyList.length"
-            />
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <!-- 异常根因 -->
+    <el-card shadow="hover" class="chart-card">
+      <template #header>
+        <div class="card-header">
+          <span>异常能耗根因分析</span>
+        </div>
+      </template>
+      <AbnormalRootCause
+        :time-granularity="searchForm.timeGranularity"
+      />
+    </el-card>
 
     <!-- 能耗预测 -->
-    <el-row :gutter="20">
-      <el-col :xs="24">
-        <el-card shadow="hover" class="chart-card">
-          <div slot="header" class="card-header">
-            <h3 class="card-title">
-              <i class="fa fa-line-chart"></i> 能耗预测分析
-            </h3>
-            <el-select v-model="predictionDays" placeholder="预测天数" size="small">
-              <el-option label="7天" value="7" />
-              <el-option label="15天" value="15" />
-              <el-option label="30天" value="30" />
-            </el-select>
-          </div>
-          <div class="chart-container">
-            <div ref="energyPredictionChart" class="chart"></div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+    <el-card shadow="hover" class="chart-card">
+      <template #header>
+        <div class="card-header">
+          <span>能耗预测</span>
+        </div>
+      </template>
+      <EnergyPrediction
+        :time-granularity="searchForm.timeGranularity"
+      />
+    </el-card>
   </div>
 </template>
 
 <script>
-import * as echarts from 'echarts'
+import FilterBar from './components/FilterBar.vue'
+import MetricsOverview from './components/MetricsOverview.vue'
+import EnergyTrend from './components/EnergyTrend.vue'
+import EnergyStructure from './components/EnergyStructure.vue'
+import AbnormalEnergy from './components/AbnormalEnergy.vue'
+import TrainAnalysis from './components/TrainAnalysis.vue'
+import EquipmentAnalysis from './components/EquipmentAnalysis.vue'
+import AbnormalRootCause from './components/AbnormalRootCause.vue'
+import EnergyPrediction from './components/EnergyPrediction.vue'
 
 export default {
   name: 'StationAnalysis',
+  components: {
+    FilterBar,
+    MetricsOverview,
+    EnergyTrend,
+    EnergyStructure,
+    AbnormalEnergy,
+    TrainAnalysis,
+    EquipmentAnalysis,
+    AbnormalRootCause,
+    EnergyPrediction
+  },
   data() {
     return {
-      // 筛选条件
-      selectedStation: '',
-      dateRange: '',
-      timeGranularity: 'day',
-      predictionDays: '7',
-      
+      // 搜索表单
+      searchForm: {
+        station: 'beijing-south',
+        timeGranularity: 'day'
+      },
       // 站点列表
       stationList: [
-        { label: '北京南站', value: 'beijing-south' },
-        { label: '上海虹桥站', value: 'shanghai-hongqiao' },
-        { label: '广州南站', value: 'guangzhou-south' },
-        { label: '深圳北站', value: 'shenzhen-north' },
-        { label: '杭州东站', value: 'hangzhou-east' },
-        { label: '成都东站', value: 'chengdu-east' }
+        { id: 'beijing-south', name: '北京南站' },
+        { id: 'shanghai-hongqiao', name: '上海虹桥站' },
+        { id: 'guangzhou-south', name: '广州南站' },
+        { id: 'shenzhen-north', name: '深圳北站' },
+        { id: 'hangzhou-east', name: '杭州东站' }
       ],
-      
-      // 能耗指标数据
-      totalEnergy: '2,345,678',
-      unitAreaEnergy: '123.45',
-      energyCost: '187,654.32',
-      energyEfficiency: '85.6',
-      
-      // 趋势数据
-      energyTrend: { yoy: '5.2', mom: '-2.1' },
-      unitAreaTrend: { yoy: '3.1', mom: '1.8' },
-      costTrend: { yoy: '7.5', mom: '-0.5' },
-      efficiencyTrend: { yoy: '2.8', mom: '1.2' },
-      
+      // 指标数据
+      metrics: {
+        totalEnergy: '2,345,678',
+        unitAreaEnergy: '123.45',
+        energyCost: '187,654.32',
+        energyEfficiency: '85.6'
+      },
       // 异常能耗列表
       abnormalEnergyList: [],
-      
-      // 分页数据
-      currentPage: 1,
-      pageSize: 10,
-      loading: false,
-      
-      // 图表实例
-      energyTrendChart: null,
-      energyStructureChart: null,
-      departmentEnergyChart: null,
-      energyPredictionChart: null
+      // 异常能耗分页信息
+      abnormalPageInfo: {
+        currentPage: 1,
+        pageSize: 10,
+        total: 0
+      },
+      // 车次时刻表数据
+      trainSchedule: [
+        { trainNumber: 'G101', arrivalTime: '06:35', departureTime: '06:37', energyConsumption: '3456', energyEfficiency: '87.2' },
+        { trainNumber: 'G102', arrivalTime: '07:12', departureTime: '07:14', energyConsumption: '3210', energyEfficiency: '88.5' },
+        { trainNumber: 'G103', arrivalTime: '07:50', departureTime: '07:52', energyConsumption: '3678', energyEfficiency: '86.8' },
+        { trainNumber: 'G104', arrivalTime: '08:28', departureTime: '08:30', energyConsumption: '3345', energyEfficiency: '87.9' },
+        { trainNumber: 'G105', arrivalTime: '09:05', departureTime: '09:07', energyConsumption: '3567', energyEfficiency: '87.5' },
+        { trainNumber: 'G106', arrivalTime: '09:42', departureTime: '09:44', energyConsumption: '3123', energyEfficiency: '89.1' },
+        { trainNumber: 'G107', arrivalTime: '10:20', departureTime: '10:22', energyConsumption: '3789', energyEfficiency: '86.3' },
+        { trainNumber: 'G108', arrivalTime: '10:58', departureTime: '11:00', energyConsumption: '3432', energyEfficiency: '87.7' },
+        { trainNumber: 'G109', arrivalTime: '11:35', departureTime: '11:37', energyConsumption: '3654', energyEfficiency: '87.0' },
+        { trainNumber: 'G110', arrivalTime: '12:12', departureTime: '12:14', energyConsumption: '3298', energyEfficiency: '88.2' },
+        { trainNumber: 'G111', arrivalTime: '12:50', departureTime: '12:52', energyConsumption: '3712', energyEfficiency: '86.5' },
+        { trainNumber: 'G112', arrivalTime: '13:28', departureTime: '13:30', energyConsumption: '3387', energyEfficiency: '87.8' },
+        { trainNumber: 'G113', arrivalTime: '14:05', departureTime: '14:07', energyConsumption: '3598', energyEfficiency: '87.4' },
+        { trainNumber: 'G114', arrivalTime: '14:42', departureTime: '14:44', energyConsumption: '3189', energyEfficiency: '88.9' },
+        { trainNumber: 'G115', arrivalTime: '15:20', departureTime: '15:22', energyConsumption: '3823', energyEfficiency: '86.1' },
+        { trainNumber: 'G116', arrivalTime: '15:58', departureTime: '16:00', energyConsumption: '3476', energyEfficiency: '87.6' },
+        { trainNumber: 'G117', arrivalTime: '16:35', departureTime: '16:37', energyConsumption: '3689', energyEfficiency: '86.9' },
+        { trainNumber: 'G118', arrivalTime: '17:12', departureTime: '17:14', energyConsumption: '3334', energyEfficiency: '87.9' },
+        { trainNumber: 'G119', arrivalTime: '17:50', departureTime: '17:52', energyConsumption: '3745', energyEfficiency: '86.4' },
+        { trainNumber: 'G120', arrivalTime: '18:28', departureTime: '18:30', energyConsumption: '3412', energyEfficiency: '87.7' }
+      ],
+      // 过滤后的车次数据
+      filteredTrainSchedule: [],
+      // 车次分页信息
+      trainPageInfo: {
+        currentPage: 1,
+        pageSize: 10,
+        total: 0
+      }
     }
   },
   mounted() {
-    this.initCharts()
     this.loadAbnormalEnergyData()
-    this.selectedStation = 'beijing-south'
-  },
-  beforeUnmount() {
-    // 销毁图表实例
-    if (this.energyTrendChart) {
-      this.energyTrendChart.dispose()
-    }
-    if (this.energyStructureChart) {
-      this.energyStructureChart.dispose()
-    }
-    if (this.departmentEnergyChart) {
-      this.departmentEnergyChart.dispose()
-    }
-    if (this.energyPredictionChart) {
-      this.energyPredictionChart.dispose()
-    }
+    this.filteredTrainSchedule = this.trainSchedule
+    this.trainPageInfo.total = this.trainSchedule.length
   },
   methods: {
-    // 初始化图表
-    initCharts() {
-      this.initEnergyTrendChart()
-      this.initEnergyStructureChart()
-      this.initDepartmentEnergyChart()
-      this.initEnergyPredictionChart()
-      
-      // 监听窗口大小变化，调整图表大小
-      window.addEventListener('resize', this.handleWindowResize)
+    // 返回上一页
+    handleBack() {
+      this.$router.back()
     },
-    
-    // 初始化能耗趋势图
-    initEnergyTrendChart() {
-      this.energyTrendChart = echarts.init(this.$refs.energyTrendChart)
-      const option = {
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: {
-            type: 'cross',
-            label: {
-              backgroundColor: '#6a7985'
-            }
-          }
-        },
-        legend: {
-          data: ['实际能耗', '预测能耗', '历史平均'],
-          top: 10
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
-        xAxis: {
-          type: 'category',
-          boundaryGap: false,
-          data: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月']
-        },
-        yAxis: {
-          type: 'value',
-          name: '能耗(kWh)',
-          axisLabel: {
-            formatter: '{value}'
-          }
-        },
-        series: [
-          {
-            name: '实际能耗',
-            type: 'line',
-            stack: 'Total',
-            areaStyle: {},
-            emphasis: {
-              focus: 'series'
-            },
-            data: [120000, 190000, 360000, 280000, 450000, 320000, 580000, 620000, 480000, 350000, 280000, 220000]
-          },
-          {
-            name: '预测能耗',
-            type: 'line',
-            stack: 'Total',
-            areaStyle: {},
-            emphasis: {
-              focus: 'series'
-            },
-            lineStyle: {
-              type: 'dashed'
-            },
-            data: [null, null, null, null, null, null, null, null, null, null, 290000, 230000]
-          },
-          {
-            name: '历史平均',
-            type: 'line',
-            stack: 'Total',
-            areaStyle: {},
-            emphasis: {
-              focus: 'series'
-            },
-            lineStyle: {
-              type: 'dotted'
-            },
-            data: [180000, 220000, 310000, 290000, 410000, 350000, 520000, 580000, 450000, 330000, 270000, 210000]
-          }
-        ]
+    // 查询
+    handleQuery() {
+      // 触发查询逻辑，更新数据
+      this.loadAbnormalEnergyData()
+    },
+    // 重置
+    handleReset() {
+      this.searchForm = {
+        station: 'beijing-south',
+        timeGranularity: 'day'
       }
-      this.energyTrendChart.setOption(option)
+      this.handleQuery()
     },
-    
-    // 初始化能耗结构饼图
-    initEnergyStructureChart() {
-      this.energyStructureChart = echarts.init(this.$refs.energyStructureChart)
-      const option = {
-        tooltip: {
-          trigger: 'item',
-          formatter: '{b}: {c} kWh ({d}%)'
-        },
-        legend: {
-          orient: 'vertical',
-          left: 10,
-          top: 'center'
-        },
-        series: [
-          {
-            name: '能耗结构',
-            type: 'pie',
-            radius: ['40%', '70%'],
-            avoidLabelOverlap: false,
-            itemStyle: {
-              borderRadius: 10,
-              borderColor: '#fff',
-              borderWidth: 2
-            },
-            label: {
-              show: false,
-              position: 'center'
-            },
-            emphasis: {
-              label: {
-                show: true,
-                fontSize: '18',
-                fontWeight: 'bold'
-              }
-            },
-            labelLine: {
-              show: false
-            },
-            data: [
-              { value: 850000, name: '空调系统' },
-              { value: 520000, name: '照明系统' },
-              { value: 380000, name: '动力系统' },
-              { value: 240000, name: '通风系统' },
-              { value: 150000, name: '其他系统' }
-            ]
-          }
-        ]
-      }
-      this.energyStructureChart.setOption(option)
-    },
-    
-    // 初始化部门能耗对比图
-    initDepartmentEnergyChart() {
-      this.departmentEnergyChart = echarts.init(this.$refs.departmentEnergyChart)
-      const option = {
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: {
-            type: 'shadow'
-          }
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
-        xAxis: {
-          type: 'value',
-          name: '能耗(kWh)'
-        },
-        yAxis: {
-          type: 'category',
-          data: ['候车大厅', '售票厅', '办公区', '设备房', '停车场', '站台', '其他区域']
-        },
-        series: [
-          {
-            name: '本月能耗',
-            type: 'bar',
-            stack: 'total',
-            label: {
-              show: true
-            },
-            emphasis: {
-              focus: 'series'
-            },
-            data: [450000, 120000, 230000, 380000, 150000, 180000, 90000]
-          },
-          {
-            name: '上月能耗',
-            type: 'bar',
-            stack: 'total',
-            label: {
-              show: true
-            },
-            emphasis: {
-              focus: 'series'
-            },
-            data: [420000, 110000, 210000, 350000, 140000, 170000, 85000]
-          }
-        ]
-      }
-      this.departmentEnergyChart.setOption(option)
-    },
-    
-    // 初始化能耗预测图
-    initEnergyPredictionChart() {
-      this.energyPredictionChart = echarts.init(this.$refs.energyPredictionChart)
-      const option = {
-        tooltip: {
-          trigger: 'axis',
-          axisPointer: {
-            type: 'cross',
-            label: {
-              backgroundColor: '#6a7985'
-            }
-          }
-        },
-        legend: {
-          data: ['实际能耗', '预测能耗'],
-          top: 10
-        },
-        grid: {
-          left: '3%',
-          right: '4%',
-          bottom: '3%',
-          containLabel: true
-        },
-        xAxis: {
-          type: 'category',
-          boundaryGap: false,
-          data: ['1月1日', '1月2日', '1月3日', '1月4日', '1月5日', '1月6日', '1月7日', '1月8日', '1月9日', '1月10日', '1月11日', '1月12日', '1月13日', '1月14日', '1月15日']
-        },
-        yAxis: {
-          type: 'value',
-          name: '能耗(kWh)'
-        },
-        series: [
-          {
-            name: '实际能耗',
-            type: 'line',
-            data: [12000, 19000, 36000, 28000, 45000, 32000, 58000],
-            itemStyle: {
-              color: '#409EFF'
-            }
-          },
-          {
-            name: '预测能耗',
-            type: 'line',
-            data: [null, null, null, null, null, null, null, 42000, 38000, 45000, 52000, 48000, 55000, 50000, 47000],
-            lineStyle: {
-              type: 'dashed',
-              color: '#E6A23C'
-            },
-            areaStyle: {
-              color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                { offset: 0, color: 'rgba(230, 162, 60, 0.5)' },
-                { offset: 1, color: 'rgba(230, 162, 60, 0.1)' }
-              ])
-            }
-          }
-        ]
-      }
-      this.energyPredictionChart.setOption(option)
-    },
-    
     // 加载异常能耗数据
     loadAbnormalEnergyData() {
-      this.loading = true
       // 模拟加载数据
-      setTimeout(() => {
-        this.abnormalEnergyList = [
-          {
-            id: 1,
-            time: '2024-01-15 08:30:00',
-            energyValue: '23,456',
-            expectedValue: '18,500',
-            deviation: '26.7',
-            reason: '空调系统异常运行'
-          },
-          {
-            id: 2,
-            time: '2024-01-14 14:20:00',
-            energyValue: '15,678',
-            expectedValue: '12,300',
-            deviation: '27.5',
-            reason: '照明系统未按时关闭'
-          },
-          {
-            id: 3,
-            time: '2024-01-13 22:15:00',
-            energyValue: '8,901',
-            expectedValue: '6,500',
-            deviation: '36.9',
-            reason: '设备房通风系统故障'
-          },
-          {
-            id: 4,
-            time: '2024-01-12 09:45:00',
-            energyValue: '19,234',
-            expectedValue: '16,800',
-            deviation: '14.5',
-            reason: '候车大厅空调温度设置过低'
-          },
-          {
-            id: 5,
-            time: '2024-01-11 16:30:00',
-            energyValue: '13,456',
-            expectedValue: '10,200',
-            deviation: '31.9',
-            reason: '售票厅照明系统异常'
-          }
-        ]
-        this.loading = false
-      }, 1000)
+      const mockData = [
+        { id: 1, time: '2023-10-15 08:30', energyValue: '12,345', threshold: '10,000', deviation: '+23.45%', status: 'unresolved', reason: '空调系统异常' },
+        { id: 2, time: '2023-10-16 14:20', energyValue: '11,876', threshold: '10,000', deviation: '+18.76%', status: 'unresolved', reason: '照明系统超时运行' },
+        { id: 3, time: '2023-10-17 09:45', energyValue: '9,876', threshold: '10,000', deviation: '-1.24%', status: 'resolved', reason: '设备节能改造效果' },
+        { id: 4, time: '2023-10-18 16:10', energyValue: '13,456', threshold: '10,000', deviation: '+34.56%', status: 'unresolved', reason: '高峰期设备满负荷运行' },
+        { id: 5, time: '2023-10-19 11:25', energyValue: '10,987', threshold: '10,000', deviation: '+9.87%', status: 'resolved', reason: '临时设备调试' }
+      ]
+      
+      this.abnormalEnergyList = mockData
+      this.abnormalPageInfo.total = mockData.length
     },
-    
-    // 查询数据
-    handleQuery() {
-      this.loading = true
-      // 模拟查询数据
-      setTimeout(() => {
-        this.loading = false
-        this.$message.success('查询成功')
-      }, 1000)
-    },
-    
-    // 重置筛选条件
-    handleReset() {
-      this.selectedStation = ''
-      this.dateRange = ''
-      this.timeGranularity = 'day'
-      this.$message.info('筛选条件已重置')
-    },
-    
-    // 切换图表全屏
-    toggleChartFullscreen() {
-      this.$message.info('全屏功能开发中...')
-    },
-    
-    // 查看异常详情
-    handleViewDetail(row) {
-      this.$message.info(`查看ID为${row.id}的异常详情`)
-    },
-    
-    // 标记异常已处理
-    handleMarkResolved(row) {
-      this.$confirm('确定要标记此异常为已处理吗？', '提示', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }).then(() => {
-        this.$message.success('标记成功')
-      }).catch(() => {
-        this.$message.info('已取消操作')
-      })
-    },
-    
-    // 导出异常报告
-    handleExportAlert() {
-      this.$message.info('导出异常报告功能开发中...')
-    },
-    
-    // 分页处理
-    handleSizeChange(val) {
-      this.pageSize = val
-      this.currentPage = 1
-    },
-    
-    handleCurrentChange(val) {
-      this.currentPage = val
-    },
-    
-    // 窗口大小变化时调整图表大小
-    handleWindowResize() {
-      if (this.energyTrendChart) {
-        this.energyTrendChart.resize()
+    // 标记异常能耗为已解决
+    handleMarkResolved(id) {
+      const item = this.abnormalEnergyList.find(item => item.id === id)
+      if (item) {
+        item.status = 'resolved'
       }
-      if (this.energyStructureChart) {
-        this.energyStructureChart.resize()
-      }
-      if (this.departmentEnergyChart) {
-        this.departmentEnergyChart.resize()
-      }
-      if (this.energyPredictionChart) {
-        this.energyPredictionChart.resize()
-      }
+    },
+    // 异常能耗分页大小变化
+    handleAbnormalSizeChange(size) {
+      this.abnormalPageInfo.pageSize = size
+    },
+    // 异常能耗当前页变化
+    handleAbnormalCurrentChange(current) {
+      this.abnormalPageInfo.currentPage = current
+    },
+    // 车次分页大小变化
+    handleTrainSizeChange(size) {
+      this.trainPageInfo.pageSize = size
+    },
+    // 车次当前页变化
+    handleTrainCurrentChange(current) {
+      this.trainPageInfo.currentPage = current
     }
   }
 }
@@ -707,121 +268,17 @@ export default {
 
 <style scoped>
 .station-analysis-container {
-  padding: 20px;
+  padding: 16px;
   background-color: #f5f7fa;
   min-height: 100vh;
 }
 
-/* 页面标题样式 */
-.page-header {
-  margin-bottom: 20px;
-}
-
-.page-title {
-  font-size: 28px;
-  font-weight: bold;
-  color: #303133;
-  margin: 0 0 10px 0;
-  display: flex;
-  align-items: center;
-}
-
-.page-title i {
-  margin-right: 10px;
-  color: #409EFF;
-}
-
-.page-subtitle {
-  font-size: 14px;
-  color: #606266;
-  margin: 0;
-}
-
-/* 筛选条件样式 */
 .filter-card {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
-.filter-actions {
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-end;
-}
-
-.filter-actions .el-button {
-  margin-left: 10px;
-}
-
-/* 指标卡片样式 */
-.metrics-row {
-  margin-bottom: 20px;
-}
-
-.metric-card {
-  height: 100%;
-  transition: all 0.3s ease;
-}
-
-.metric-card:hover {
-  transform: translateY(-5px);
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
-}
-
-.metric-content {
-  padding: 20px;
-}
-
-.metric-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-
-.metric-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: #606266;
-  margin: 0;
-}
-
-.metric-icon {
-  font-size: 24px;
-  color: #909399;
-}
-
-.metric-value {
-  font-size: 32px;
-  font-weight: bold;
-  color: #303133;
-  margin-bottom: 10px;
-}
-
-.metric-trend {
-  font-size: 14px;
-  color: #606266;
-}
-
-.trend-label {
-  margin-right: 5px;
-}
-
-.trend-value {
-  margin-right: 15px;
-  font-weight: 500;
-}
-
-.trend-value.positive {
-  color: #F56C6C;
-}
-
-.trend-value.negative {
-  color: #67C23A;
-}
-
-/* 卡片样式 */
 .chart-card {
-  margin-bottom: 20px;
+  margin-bottom: 16px;
 }
 
 .card-header {
@@ -830,58 +287,7 @@ export default {
   align-items: center;
 }
 
-.card-title {
-  font-size: 18px;
-  font-weight: bold;
-  color: #303133;
-  margin: 0;
-  display: flex;
-  align-items: center;
-}
-
-.card-title i {
-  margin-right: 8px;
-  color: #409EFF;
-}
-
-/* 图表容器样式 */
-.chart-container {
-  position: relative;
-  height: 400px;
-}
-
-.chart {
-  width: 100%;
-  height: 100%;
-}
-
-/* 表格样式 */
-.alert-card .el-table {
-  margin-top: 20px;
-}
-
-.pagination-container {
-  margin-top: 20px;
-  display: flex;
-  justify-content: flex-end;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .station-analysis-container {
-    padding: 10px;
-  }
-  
-  .page-title {
-    font-size: 24px;
-  }
-  
-  .chart-container {
-    height: 300px;
-  }
-  
-  .metric-value {
-    font-size: 24px;
-  }
+.w-48 {
+  width: 192px;
 }
 </style>
